@@ -1,0 +1,2 @@
+-- name: RANDOM
+-- random chance to cooperate or defect

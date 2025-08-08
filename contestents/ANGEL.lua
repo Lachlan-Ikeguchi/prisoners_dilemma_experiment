@@ -1,0 +1,2 @@
+-- name: ANGEL
+-- will always cooperate

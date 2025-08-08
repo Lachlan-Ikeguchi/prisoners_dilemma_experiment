@@ -1,0 +1,2 @@
+-- name: TIT FOR TAT
+-- will immediately retaliate for defection, otherwise cooperate
