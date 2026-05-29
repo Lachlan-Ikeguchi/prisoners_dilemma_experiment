@@ -280,14 +280,14 @@ fn run_tournament(
         .collect();
 
     // Use Mutex to safely collect results from multiple threads
-    let results_mutex = Mutex::new(HashMap < String, HashMap < String, (i32, i32) >> ::new());
+    let results_mutex = Mutex::new(HashMap::<String, HashMap<String, (i32, i32)>>::new());
 
     // Process match pairs in parallel
-    match_pairs.par_iter().try_for_each(|&(i, j)| {
+    match_pairs.par_iter().for_each(|&(i, j)| {
         let contestant1 = &contestants[i];
         let contestant2 = &contestants[j];
 
-        let match_result = run_match_pair(contestant1, contestant2, rounds, repetitions, verbose)?;
+        let match_result = run_match_pair(contestant1, contestant2, rounds, repetitions, verbose).unwrap();
 
         // Lock the mutex and insert results
         let mut results = results_mutex.lock().unwrap();
@@ -311,9 +311,7 @@ fn run_tournament(
                     (match_result.score2, match_result.score1),
                 );
         }
-
-        Ok(())
-    })?;
+    });
 
     // Extract the results from the Mutex
     let results = results_mutex.into_inner().unwrap();
