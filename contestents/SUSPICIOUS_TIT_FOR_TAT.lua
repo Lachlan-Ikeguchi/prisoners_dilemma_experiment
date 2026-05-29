@@ -1,13 +1,13 @@
--- name: TIT FOR TAT
--- will immediately retaliate for defection, otherwise cooperate
+-- name: SUSPICIOUS TIT FOR TAT
+-- starts by defecting, then mirrors opponent's last move
 
 function decide(round, history)
-    -- On first round, cooperate
+    -- On first round, defect
     if round == 1 then
-        return "cooperate"
+        return "defect"
     end
     
-    -- Check opponent's last move
+    -- Mirror opponent's last move
     if history[#history] == "defect" then
         return "defect"
     else
