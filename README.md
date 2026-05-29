@@ -74,17 +74,42 @@ The framework comes with several pre-defined contestants:
 cargo build --release
 ```
 
+### Configuration Files
+
+The program now uses TOML configuration files instead of command line arguments. Create a configuration file like `config.toml`:
+
+```toml
+# Prisoner's Dilemma Simulation Configuration
+contestants_dir = "contestents"
+rounds = 100
+repetitions = 1
+verbose = false
+
+# Optional: specify number of threads
+# threads = 4
+```
+
+An example configuration file is provided as `example_config.toml`.
+
 ### Run a Tournament
 
 ```bash
-cargo run -- -r 100 --repetitions 3
+# Run with a configuration file
+cargo run -- --config config.toml
+
+# Run with default configuration (creates default_config.toml if it doesn't exist)
+cargo run --
+
+# Run with custom output file
+cargo run -- --config config.toml --output my_results.toml
 ```
 
-Options:
-- `-c, --contestants-dir <DIR>` - Directory containing contestant Lua scripts (default: "contestents")
-- `-r, --rounds <N>` - Number of rounds to play in each match (default: 100)
-- `--repetitions <N>` - Number of times to repeat each pair of contestants (default: 1)
-- `-v, --verbose` - Show verbose output with round-by-round details
+### Command Line Options
+
+- `-c, --config <CONFIG>` - TOML configuration file for the simulation
+- `-d, --data <DATA>` - TOML file containing simulation results to visualize
+- `-v, --visualise` - Visualize the results (shows graphs, tables, and scoreboard in console)
+- `-o, --output <OUTPUT>` - Output file for simulation results (default: simulation_results.toml)
 - `-l, --list` - List available contestants and exit
 - `-h, --help` - Print help
 - `-V, --version` - Print version
@@ -96,19 +121,25 @@ List all contestants:
 cargo run -- --list
 ```
 
+Run a tournament with custom configuration:
+```bash
+cargo run -- --config my_config.toml --output results.toml
+```
+
+Run a tournament and visualize results immediately:
+```bash
+cargo run -- --config config.toml --visualise
+```
+
+Visualize existing results:
+```bash
+cargo run -- --data simulation_results.toml --visualise
+```
+
 Run a quick tournament with 10 rounds:
 ```bash
-cargo run -- -r 10
-```
-
-Run a comprehensive tournament with 200 rounds and 5 repetitions:
-```bash
-cargo run -- -r 200 --repetitions 5
-```
-
-Run with verbose output to see round-by-round decisions:
-```bash
-cargo run -- -r 10 -v
+# Create a config file with rounds = 10
+cargo run -- --config quick_config.toml
 ```
 
 ## Scoring
@@ -117,6 +148,91 @@ The framework uses standard Prisoner's Dilemma payoffs:
 - Both cooperate: 3 points each
 - One defects, one cooperates: 5 for defector, 0 for cooperator
 - Both defect: 1 point each
+
+## Output Format
+
+The simulation results are saved in TOML format and include:
+
+- **Configuration**: The settings used for the simulation
+- **Contestants**: List of all contestant names
+- **Match Results**: Detailed results of each match between contestants
+- **Total Scores**: Aggregate scores for each contestant
+- **Rankings**: Contestants sorted by total score
+- **Timestamp**: When the simulation was run
+
+Example output file structure:
+```toml
+contestants = ["TIT FOR TAT", "ALWAYS COOPERATE", "ALWAYS DEFECT"]
+rankings = [["ALWAYS DEFECT", 150], ["TIT FOR TAT", 90], ["ALWAYS COOPERATE", 60]]
+timestamp = "2024-01-01T12:00:00.000000+00:00"
+
+[config]
+contestants_dir = "contestents"
+rounds = 100
+repetitions = 1
+verbose = false
+
+[match_results.TIT_FOR_TAT]
+"ALWAYS COOPERATE" = [90, 60]
+"ALWAYS DEFECT" = [0, 150]
+
+[total_scores]
+"ALWAYS COOPERATE" = 60
+"ALWAYS DEFECT" = 150
+"TIT FOR TAT" = 90
+```
+
+## Visualization
+
+The `--visualise` flag provides a comprehensive console-based visualization including:
+
+- **Scoreboard**: Rankings with medals (🥇🥈🥉) and contestant descriptions
+- **Graphs**: ASCII bar charts showing score distribution
+- **Results Table**: Detailed match results and total scores
+- **Statistics**: Average scores, highest/lowest scores, and other metrics
+- **Sample Matches**: Head-to-head results between top contestants
+
+### Example Visualization Output
+
+```
+📊 Prisoner's Dilemma Simulation Visualization
+==============================================
+
+📋 Configuration:
+  Contestants Directory: contestents
+  Rounds per Match: 100
+  Repetitions: 1
+  Timestamp: 2024-01-01T12:00:00.000000+00:00
+
+🏆 Rankings:
+  🥇 1. ALWAYS DEFECT: 150 (will always defect, no matter what)
+  🥈 2. TIT FOR TAT: 90 (cooperates first, then mirrors opponent's last move)
+  🥉 3. ALWAYS COOPERATE: 60 (always cooperates)
+
+📋 Total Scores:
+  Contestant              Score
+  --------------------------
+  ALWAYS DEFECT               150
+  TIT FOR TAT                  90
+  ALWAYS COOPERATE             60
+
+📈 Summary Statistics:
+  Total Contestants: 3
+  Average Score: 100.0
+  Highest Score: ALWAYS DEFECT (150)
+  Lowest Score: ALWAYS COOPERATE (60)
+
+📊 Score Distribution (ASCII Chart):
+  ALWAYS DEFECT       ████████████████████████████████████████ 150
+  TIT FOR TAT        ██████████████████                     90
+  ALWAYS COOPERATE  ████████                              60
+
+🎯 Sample Match Results (Top 3 vs Top 3):
+  ALWAYS DEFECT vs TIT FOR TAT: 150 - 0
+  ALWAYS DEFECT vs ALWAYS COOPERATE: 150 - 0
+  TIT FOR TAT vs ALWAYS DEFECT: 0 - 150
+  TIT FOR TAT vs ALWAYS COOPERATE: 90 - 60
+```
 
 ## Adding New Contestants
 
@@ -136,6 +252,19 @@ function decide(round, history)
     return "cooperate"
 end
 ```
+
+## GUI Visualization (Optional)
+
+For a graphical user interface, you can add the following dependencies to `Cargo.toml`:
+
+```toml
+[dependencies]
+egui = "0.24"
+egui_extras = "0.24"
+eframe = { version = "0.24", features = ["default_fonts"] }
+```
+
+Then modify the visualization code to use egui for rendering graphs, tables, and scoreboards in a native window. The current console visualization provides all the same information in text format.
 
 ## Dependencies
 

@@ -1,0 +1,17 @@
+# Prisoner's Dilemma Simulation Configuration
+# This file contains all the settings for running a tournament
+
+# Directory containing contestant Lua scripts
+contestants_dir = "contestents"
+
+# Number of rounds to play in each match
+rounds = 100
+
+# Number of times to repeat each pair of contestants
+repetitions = 1
+
+# Number of threads to use (optional, comment out for auto-detection)
+# threads = 4
+
+# Show verbose output (round-by-round details)
+verbose = false

@@ -7,3 +7,6 @@ edition = "2024"
 clap = { version = "4.5.39", features = ["derive"] }
 mlua = { version = "0.10.5", features = ["lua54", "vendored"] }
 rayon = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+chrono = "0.4"

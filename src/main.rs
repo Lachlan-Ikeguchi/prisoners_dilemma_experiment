@@ -1,44 +1,113 @@
 use clap::Parser;
 use mlua::{Lua, Result};
 use rayon::prelude::*;
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, BTreeMap};
 use std::fs;
 use std::sync::Mutex;
 
-/// Prisoner's Dilemma Experiment Framework
-///
-/// This framework allows running Prisoner's Dilemma experiments with contestants
-/// defined in Lua scripts. Each contestant script must have a name and description
-/// in comments at the top, and must implement a `decide` function.
+/// Configuration for the Prisoner's Dilemma simulation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SimulationConfig {
+    /// Directory containing contestant Lua scripts
+    #[serde(default = "default_contestants_dir")]
+    contestants_dir: String,
+    
+    /// Number of rounds to play in each match
+    #[serde(default = "default_rounds")]
+    rounds: usize,
+    
+    /// Number of times to repeat each pair of contestants
+    #[serde(default = "default_repetitions")]
+    repetitions: usize,
+    
+    /// Number of threads to use (optional)
+    #[serde(default)]
+    threads: Option<usize>,
+    
+    /// Show verbose output
+    #[serde(default)]
+    verbose: bool,
+}
+
+fn default_contestants_dir() -> String {
+    "contestents".to_string()
+}
+
+fn default_rounds() -> usize {
+    100
+}
+
+fn default_repetitions() -> usize {
+    1
+}
+
+impl Default for SimulationConfig {
+    fn default() -> Self {
+        Self {
+            contestants_dir: default_contestants_dir(),
+            rounds: default_rounds(),
+            repetitions: default_repetitions(),
+            threads: None,
+            verbose: false,
+        }
+    }
+}
+
+/// Data structure for storing simulation results
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SimulationResults {
+    /// Configuration used for the simulation
+    config: SimulationConfig,
+    
+    /// List of contestant names
+    contestants: Vec<String>,
+    
+    /// Individual match results: contestant1 -> contestant2 -> (score1, score2)
+    match_results: BTreeMap<String, BTreeMap<String, (i32, i32)>>,
+    
+    /// Total scores for each contestant
+    total_scores: BTreeMap<String, i32>,
+    
+    /// Ranking of contestants by total score
+    rankings: Vec<(String, i32)>,
+    
+    /// Timestamp of when the simulation was run
+    #[serde(default = "default_timestamp")]
+    timestamp: String,
+}
+
+fn default_timestamp() -> String {
+    chrono::Local::now().to_rfc3339()
+}
+
+/// Command line arguments
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Directory containing contestant Lua scripts
-    #[arg(short, long, default_value = "contestents")]
-    contestants_dir: String,
-
-    /// Number of rounds to play in each match
-    #[arg(short, long, default_value_t = 100)]
-    rounds: usize,
-
-    /// Number of times to repeat each pair of contestants
-    #[arg(long, default_value_t = 1)]
-    repetitions: usize,
-
-    /// Show verbose output
+    /// TOML configuration file for the simulation
     #[arg(short, long)]
-    verbose: bool,
-
+    config: Option<String>,
+    
+    /// TOML file containing simulation results to visualize
+    #[arg(short, long)]
+    data: Option<String>,
+    
+    /// Visualize the results (shows graphs, tables, and scoreboard in console)
+    #[arg(short, long)]
+    visualise: bool,
+    
+    /// Output file for simulation results (default: simulation_results.toml)
+    #[arg(short, long, default_value = "simulation_results.toml")]
+    output: String,
+    
     /// List available contestants and exit
     #[arg(short, long)]
     list: bool,
-
-    /// Number of threads to use (default: auto-detect)
-    #[arg(short, long)]
-    threads: Option<usize>,
 }
 
 /// Represents a contestant in the Prisoner's Dilemma game
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Contestant {
     name: String,
     description: String,
@@ -56,7 +125,7 @@ impl Contestant {
 }
 
 /// Action a contestant can take
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum Action {
     Cooperate,
     Defect,
@@ -133,7 +202,7 @@ fn extract_description(content: &str) -> String {
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("-- will")
-            || trimmed.starts_with("-- ") && !trimmed.starts_with("-- name:")
+            || (trimmed.starts_with("-- ") && !trimmed.starts_with("-- name:"))
         {
             return trimmed.trim_start_matches("--").trim().to_string();
         }
@@ -318,6 +387,33 @@ fn run_tournament(
     Ok(results)
 }
 
+/// Save simulation results to a TOML file
+fn save_results(results: &SimulationResults, path: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let toml_string = toml::to_string(results)?;
+    fs::write(path, toml_string)?;
+    Ok(())
+}
+
+/// Load simulation results from a TOML file
+fn load_simulation_results(path: &str) -> std::result::Result<SimulationResults, Box<dyn std::error::Error>> {
+    let content = fs::read_to_string(path)?;
+    let results: SimulationResults = toml::from_str(&content)?;
+    Ok(results)
+}
+
+/// Load simulation configuration from a TOML file
+fn load_simulation_config(path: &str) -> std::result::Result<SimulationConfig, Box<dyn std::error::Error>> {
+    let content = fs::read_to_string(path)?;
+    let config: SimulationConfig = toml::from_str(&content)?;
+    Ok(config)
+}
+
+/// Create a default configuration TOML file
+fn create_default_config() -> String {
+    let config = SimulationConfig::default();
+    toml::to_string(&config).unwrap()
+}
+
 /// Print tournament results in a formatted table
 fn print_results(
     contestants: &[Contestant],
@@ -392,22 +488,114 @@ fn print_results(
     }
 }
 
-fn main() -> Result<()> {
+/// Display visualization of simulation results in console
+fn display_visualization(results: &SimulationResults, contestants: &[Contestant]) {
+    println!("📊 Prisoner's Dilemma Simulation Visualization");
+    println!("==============================================");
+    println!();
+    
+    // Display configuration
+    println!("📋 Configuration:");
+    println!("  Contestants Directory: {}", results.config.contestants_dir);
+    println!("  Rounds per Match: {}", results.config.rounds);
+    println!("  Repetitions: {}", results.config.repetitions);
+    println!("  Timestamp: {}", results.timestamp);
+    println!();
+    
+    // Display rankings
+    println!("🏆 Rankings:");
+    for (i, (name, score)) in results.rankings.iter().enumerate() {
+        let medal = match i {
+            0 => "🥇 ",
+            1 => "🥈 ",
+            2 => "🥉 ",
+            _ => "   ",
+        };
+        
+        let contestant_desc = contestants.iter()
+            .find(|c| c.name == *name)
+            .map(|c| c.description.as_str())
+            .unwrap_or("Unknown");
+        
+        println!("  {}{}. {}: {} ({})", medal, i + 1, name, score, contestant_desc);
+    }
+    println!();
+    
+    // Display total scores table
+    println!("📋 Total Scores:");
+    println!("  {:<25} {:>10}", "Contestant", "Score");
+    println!("  {}", "-".repeat(37));
+    for (name, score) in &results.total_scores {
+        println!("  {:<25} {:>10}", name, score);
+    }
+    println!();
+    
+    // Summary statistics
+    println!("📈 Summary Statistics:");
+    let total_score: i32 = results.rankings.iter().map(|(_, score)| score).sum();
+    let avg_score = total_score as f64 / results.rankings.len() as f64;
+    println!("  Total Contestants: {}", results.contestants.len());
+    println!("  Average Score: {:.1}", avg_score);
+    
+    if let (Some((top_name, top_score)), Some((bottom_name, bottom_score))) = 
+        (results.rankings.first(), results.rankings.last()) {
+        println!("  Highest Score: {} ({})", top_name, top_score);
+        println!("  Lowest Score: {} ({})", bottom_name, bottom_score);
+    }
+    println!();
+    
+    // ASCII bar chart
+    println!("📊 Score Distribution (ASCII Chart):");
+    let max_score = results.rankings.first().map(|(_, score)| *score).unwrap_or(1);
+    let chart_width = 50;
+    
+    for (name, score) in &results.rankings.iter().take(10).cloned().collect::<Vec<_>>() {
+        let bar_length = ((*score as f64 / max_score as f64) * chart_width as f64).round() as usize;
+        let bar = "█".repeat(bar_length);
+        println!("  {:<20} {} {}", name, bar, score);
+    }
+    println!();
+    
+    // Sample match results
+    println!("🎯 Sample Match Results (Top 5 vs Top 5):");
+    let top_contestants: Vec<&String> = results.rankings.iter().take(5).map(|(name, _)| name).collect();
+    
+    if top_contestants.len() >= 2 {
+        for i in 0..top_contestants.len() {
+            for j in 0..top_contestants.len() {
+                if i != j {
+                    let name1 = top_contestants[i];
+                    let name2 = top_contestants[j];
+                    if let Some(scores) = results.match_results.get(name1).and_then(|m| m.get(name2)) {
+                        println!("  {} vs {}: {} - {}", name1, name2, scores.0, scores.1);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // Load contestants
-    let contestants = load_contestants(&args.contestants_dir)?;
-
-    if contestants.is_empty() {
-        eprintln!(
-            "No contestants found in directory: {}",
-            args.contestants_dir
-        );
-        std::process::exit(1);
-    }
-
-    // List contestants if requested
+    // Check if we should list contestants
     if args.list {
+        let config = if let Some(config_path) = &args.config {
+            load_simulation_config(config_path)?
+        } else {
+            SimulationConfig::default()
+        };
+        
+        let contestants = load_contestants(&config.contestants_dir)?;
+        
+        if contestants.is_empty() {
+            eprintln!(
+                "No contestants found in directory: {}",
+                config.contestants_dir
+            );
+            std::process::exit(1);
+        }
+        
         println!("Available Contestants:");
         for contestant in &contestants {
             println!("  {}: {}", contestant.name, contestant.description);
@@ -415,8 +603,45 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Check if we should visualize existing data
+    if args.visualise && args.data.is_some() {
+        if let Some(data_path) = &args.data {
+            // Load results from TOML file
+            let results = load_simulation_results(data_path)?;
+            let config = results.config.clone();
+            let contestants = load_contestants(&config.contestants_dir)?;
+            
+            display_visualization(&results, &contestants);
+            return Ok(());
+        }
+    }
+
+    // Load configuration
+    let config = if let Some(config_path) = &args.config {
+        load_simulation_config(config_path)?
+    } else {
+        // Create a default config file if it doesn't exist
+        let default_config_path = "default_config.toml";
+        if !std::path::Path::new(default_config_path).exists() {
+            fs::write(default_config_path, create_default_config())?;
+            println!("Created default configuration file: {}", default_config_path);
+        }
+        load_simulation_config(default_config_path)?
+    };
+
+    // Load contestants
+    let contestants = load_contestants(&config.contestants_dir)?;
+
+    if contestants.is_empty() {
+        eprintln!(
+            "No contestants found in directory: {}",
+            config.contestants_dir
+        );
+        std::process::exit(1);
+    }
+
     // Configure thread pool if specified
-    if let Some(num_threads) = args.threads {
+    if let Some(num_threads) = config.threads {
         rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
             .build_global()
@@ -425,9 +650,9 @@ fn main() -> Result<()> {
 
     println!("Running Prisoner's Dilemma Tournament");
     println!("Contestants: {}", contestants.len());
-    println!("Rounds per match: {}", args.rounds);
-    println!("Repetitions: {}", args.repetitions);
-    if let Some(num_threads) = args.threads {
+    println!("Rounds per match: {}", config.rounds);
+    println!("Repetitions: {}", config.repetitions);
+    if let Some(num_threads) = config.threads {
         println!("Threads: {}", num_threads);
     } else {
         println!("Threads: auto");
@@ -435,10 +660,58 @@ fn main() -> Result<()> {
     println!();
 
     // Run tournament
-    let results = run_tournament(&contestants, args.rounds, args.repetitions, args.verbose)?;
+    let results = run_tournament(&contestants, config.rounds, config.repetitions, config.verbose)?;
 
-    // Print results
+    // Print results to console
     print_results(&contestants, &results);
+
+    // Convert results to SimulationResults structure
+    let mut match_results_btree = BTreeMap::new();
+    for (contestant1, opponents) in &results {
+        let mut opponent_results = BTreeMap::new();
+        for (contestant2, scores) in opponents {
+            opponent_results.insert(contestant2.clone(), *scores);
+        }
+        match_results_btree.insert(contestant1.clone(), opponent_results);
+    }
+
+    let mut total_scores = BTreeMap::new();
+    for contestant in &contestants {
+        let mut total = 0;
+        if let Some(scores) = results.get(&contestant.name) {
+            for (_, (score, _)) in scores {
+                total += score;
+            }
+        }
+        total_scores.insert(contestant.name.clone(), total);
+    }
+
+    let mut rankings: Vec<(String, i32)> = total_scores.iter()
+        .map(|(name, score)| (name.clone(), *score))
+        .collect();
+    rankings.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let contestant_names: Vec<String> = contestants.iter()
+        .map(|c| c.name.clone())
+        .collect();
+
+    let simulation_results = SimulationResults {
+        config: config.clone(),
+        contestants: contestant_names,
+        match_results: match_results_btree,
+        total_scores,
+        rankings,
+        timestamp: chrono::Local::now().to_rfc3339(),
+    };
+
+    // Save results to TOML file
+    save_results(&simulation_results, &args.output)?;
+    println!("\nSimulation results saved to: {}", args.output);
+
+    // If visualize flag is set, show the visualization
+    if args.visualise {
+        display_visualization(&simulation_results, &contestants);
+    }
 
     Ok(())
 }
