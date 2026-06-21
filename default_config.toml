@@ -1,0 +1,4 @@
+contestants_dir = "contestents"
+rounds = 100
+repetitions = 1
+verbose = false
